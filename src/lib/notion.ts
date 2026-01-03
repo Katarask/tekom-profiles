@@ -17,18 +17,23 @@ interface KandidatProfile {
   status: string;
   content: string;
   notionUrl: string;
+  // NEU: Token & Ablauf
+  profilToken?: string;
+  gueltigBis?: string;
+  erstelltAm?: string;
 }
 
 // Notion Page zu Kandidat-Daten
 function parseNotionPage(page: any): KandidatProfile | null {
   const props = page.properties;
-  
+
   const getName = (prop: any) => prop?.title?.[0]?.plain_text || "";
   const getText = (prop: any) => prop?.rich_text?.[0]?.plain_text || "";
   const getEmail = (prop: any) => prop?.email || "";
   const getPhone = (prop: any) => prop?.phone_number || "";
   const getSelect = (prop: any) => prop?.select?.name || "";
   const getMultiSelect = (prop: any) => prop?.multi_select?.map((s: any) => s.name) || [];
+  const getDate = (prop: any) => prop?.date?.start || "";
 
   return {
     id: page.id,
@@ -43,8 +48,45 @@ function parseNotionPage(page: any): KandidatProfile | null {
     techStack: getMultiSelect(props["Tech Stack"]),
     status: getSelect(props["Pipeline Status"]),
     content: "",
-    notionUrl: page.url
+    notionUrl: page.url,
+    // NEU: Token & Ablauf
+    profilToken: getText(props["Profil-Token"]),
+    gueltigBis: getDate(props["Gültig bis"]),
+    erstelltAm: page.created_time
   };
+}
+
+// NEU: Kandidat per Token suchen
+export async function getKandidatByToken(token: string): Promise<KandidatProfile | null> {
+  try {
+    const response = await fetch(`https://api.notion.com/v1/databases/${KANDIDATEN_DB}/query`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${NOTION_API_KEY}`,
+        "Notion-Version": "2022-06-28",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        filter: {
+          property: "Profil-Token",
+          rich_text: { equals: token }
+        },
+        page_size: 1
+      }),
+      next: { revalidate: 60 }
+    });
+
+    const data = await response.json();
+
+    if (data.results && data.results.length > 0) {
+      return parseNotionPage(data.results[0]);
+    }
+
+    return null;
+  } catch (error) {
+    console.error("Notion API Error:", error);
+    return null;
+  }
 }
 
 // Kandidat per ID suchen (sucht in Name oder custom ID Feld)
@@ -72,7 +114,7 @@ export async function getKandidatByProfileId(profileId: string): Promise<Kandida
     });
 
     const data = await response.json();
-    
+
     if (data.results && data.results.length > 0) {
       return parseNotionPage(data.results[0]);
     }
@@ -89,7 +131,7 @@ export async function getKandidatByPageId(pageId: string): Promise<KandidatProfi
   try {
     // Clean page ID (remove dashes if needed)
     const cleanId = pageId.replace(/-/g, "");
-    
+
     const response = await fetch(`https://api.notion.com/v1/pages/${cleanId}`, {
       headers: {
         "Authorization": `Bearer ${NOTION_API_KEY}`,
@@ -142,4 +184,32 @@ export async function getPageContent(pageId: string): Promise<string> {
     console.error("Error fetching page content:", error);
     return "";
   }
+}
+
+// NEU: Prüfen ob Profil abgelaufen ist
+export function isProfileExpired(gueltigBis: string | undefined): boolean {
+  if (!gueltigBis) return false; // Kein Ablaufdatum = nicht abgelaufen
+
+  const expiryDate = new Date(gueltigBis);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  return expiryDate < today;
+}
+
+// NEU: Token generieren (wird beim Erstellen in Notion gespeichert)
+export function generateProfileToken(): string {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  let token = '';
+  for (let i = 0; i < 12; i++) {
+    token += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return token;
+}
+
+// NEU: Ablaufdatum berechnen (3 Wochen ab heute)
+export function calculateExpiryDate(weeks: number = 3): string {
+  const date = new Date();
+  date.setDate(date.getDate() + (weeks * 7));
+  return date.toISOString().split('T')[0]; // YYYY-MM-DD
 }
