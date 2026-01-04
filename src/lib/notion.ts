@@ -17,10 +17,11 @@ interface KandidatProfile {
   status: string;
   content: string;
   notionUrl: string;
-  // NEU: Token & Ablauf
-  profilToken?: string;
-  gueltigBis?: string;
-  erstelltAm?: string;
+  // Profil-Felder
+  profilErstelltAm?: string;
+  profilViews?: number;
+  kandidatenId?: string;
+  executiveSummary?: string;
 }
 
 // Notion Page zu Kandidat-Daten
@@ -34,6 +35,7 @@ function parseNotionPage(page: any): KandidatProfile | null {
   const getSelect = (prop: any) => prop?.select?.name || "";
   const getMultiSelect = (prop: any) => prop?.multi_select?.map((s: any) => s.name) || [];
   const getDate = (prop: any) => prop?.date?.start || "";
+  const getNumber = (prop: any) => prop?.number || 0;
 
   return {
     id: page.id,
@@ -49,15 +51,26 @@ function parseNotionPage(page: any): KandidatProfile | null {
     status: getSelect(props["Pipeline Status"]),
     content: "",
     notionUrl: page.url,
-    // NEU: Token & Ablauf
-    profilToken: getText(props["Profil-Token"]),
-    gueltigBis: getDate(props["Gültig bis"]),
-    erstelltAm: page.created_time
+    profilErstelltAm: getDate(props["Profil erstellt am"]),
+    profilViews: getNumber(props["Profil Views"]),
+    kandidatenId: getText(props["Kandidaten-ID"]),
+    executiveSummary: getText(props["Executive Summary"])
   };
 }
 
-// NEU: Kandidat per Token suchen
-export async function getKandidatByToken(token: string): Promise<KandidatProfile | null> {
+// Prüfen ob Profil abgelaufen ist (> 1 Monat)
+export function isProfileExpired(profilErstelltAm?: string): boolean {
+  if (!profilErstelltAm) return false; // Kein Datum = nicht abgelaufen (Fallback)
+
+  const createdDate = new Date(profilErstelltAm);
+  const now = new Date();
+  const oneMonthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+
+  return createdDate < oneMonthAgo;
+}
+
+// Kandidat per ID suchen (sucht in Name oder custom ID Feld)
+export async function getKandidatByProfileId(profileId: string): Promise<KandidatProfile | null> {
   try {
     const response = await fetch(`https://api.notion.com/v1/databases/${KANDIDATEN_DB}/query`, {
       method: "POST",
@@ -68,8 +81,10 @@ export async function getKandidatByToken(token: string): Promise<KandidatProfile
       },
       body: JSON.stringify({
         filter: {
-          property: "Profil-Token",
-          rich_text: { equals: token }
+          or: [
+            { property: "Name", title: { contains: profileId } },
+            { property: "Kandidaten-ID", rich_text: { equals: profileId } }
+          ]
         },
         page_size: 1
       }),
@@ -89,47 +104,9 @@ export async function getKandidatByToken(token: string): Promise<KandidatProfile
   }
 }
 
-// Kandidat per ID suchen (sucht in Name oder custom ID Feld)
-export async function getKandidatByProfileId(profileId: string): Promise<KandidatProfile | null> {
-  try {
-    const response = await fetch(`https://api.notion.com/v1/databases/${KANDIDATEN_DB}/query`, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${NOTION_API_KEY}`,
-        "Notion-Version": "2022-06-28",
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        filter: {
-          or: [
-            // Suche nach Name der mit der ID beginnt
-            { property: "Name", title: { contains: profileId } },
-            // Oder nach Profil-ID Feld falls vorhanden
-            { property: "Profil-ID", rich_text: { equals: profileId } }
-          ]
-        },
-        page_size: 1
-      }),
-      next: { revalidate: 60 } // Cache für 60 Sekunden
-    });
-
-    const data = await response.json();
-
-    if (data.results && data.results.length > 0) {
-      return parseNotionPage(data.results[0]);
-    }
-
-    return null;
-  } catch (error) {
-    console.error("Notion API Error:", error);
-    return null;
-  }
-}
-
 // Kandidat per Notion Page ID holen
 export async function getKandidatByPageId(pageId: string): Promise<KandidatProfile | null> {
   try {
-    // Clean page ID (remove dashes if needed)
     const cleanId = pageId.replace(/-/g, "");
 
     const response = await fetch(`https://api.notion.com/v1/pages/${cleanId}`, {
@@ -184,32 +161,4 @@ export async function getPageContent(pageId: string): Promise<string> {
     console.error("Error fetching page content:", error);
     return "";
   }
-}
-
-// NEU: Prüfen ob Profil abgelaufen ist
-export function isProfileExpired(gueltigBis: string | undefined): boolean {
-  if (!gueltigBis) return false; // Kein Ablaufdatum = nicht abgelaufen
-
-  const expiryDate = new Date(gueltigBis);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  return expiryDate < today;
-}
-
-// NEU: Token generieren (wird beim Erstellen in Notion gespeichert)
-export function generateProfileToken(): string {
-  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-  let token = '';
-  for (let i = 0; i < 12; i++) {
-    token += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return token;
-}
-
-// NEU: Ablaufdatum berechnen (3 Wochen ab heute)
-export function calculateExpiryDate(weeks: number = 3): string {
-  const date = new Date();
-  date.setDate(date.getDate() + (weeks * 7));
-  return date.toISOString().split('T')[0]; // YYYY-MM-DD
 }

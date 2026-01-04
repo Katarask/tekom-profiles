@@ -1,6 +1,7 @@
-import { MapPin, Mail, Phone, Shield } from "lucide-react";
-import { getKandidatByPageId, getPageContent } from "@/lib/notion";
+import { MapPin, Mail, Phone, Shield, AlertTriangle } from "lucide-react";
+import { getKandidatByPageId, getPageContent, isProfileExpired } from "@/lib/notion";
 import { notFound } from "next/navigation";
+import ViewCounter from "@/components/ViewCounter";
 
 // TEKOM Daten
 const tekom = {
@@ -20,24 +21,71 @@ function estimateYears(branche: string[]): string {
   return "3+";
 }
 
+// Expired Profile Page
+function ExpiredProfile() {
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-200 flex items-center justify-center">
+      <div className="max-w-md mx-auto px-6 text-center">
+        <div className="w-16 h-16 rounded-full bg-amber-500/20 flex items-center justify-center mx-auto mb-6">
+          <AlertTriangle className="w-8 h-8 text-amber-500" />
+        </div>
+        <h1 className="text-2xl font-light text-slate-100 mb-4">
+          Profil nicht mehr verfügbar
+        </h1>
+        <p className="text-slate-400 mb-8">
+          Dieses Kandidatenprofil ist abgelaufen und wurde archiviert.
+          Für aktuelle Profile kontaktieren Sie uns bitte direkt.
+        </p>
+        <div className="text-sm text-slate-500 space-y-2">
+          <p className="flex items-center justify-center gap-2">
+            <Mail className="w-4 h-4" />
+            {tekom.email}
+          </p>
+          <p className="flex items-center justify-center gap-2">
+            <Phone className="w-4 h-4" />
+            {tekom.phone}
+          </p>
+        </div>
+        <div className="mt-8 pt-6 border-t border-slate-800">
+          <p className="text-xs text-slate-600">
+            {tekom.name}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default async function ProfilePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  
+
   // Notion Page ID kann mit oder ohne Bindestriche sein
   const kandidat = await getKandidatByPageId(id);
-  
+
   if (!kandidat) {
     notFound();
   }
 
+  // Ablauf-Check: Profil älter als 1 Monat?
+  if (isProfileExpired(kandidat.profilErstelltAm)) {
+    return <ExpiredProfile />;
+  }
+
   // Content laden
   const content = await getPageContent(id);
-  
-  // Profil-ID generieren
-  const profileId = `TC-${new Date().getFullYear()}-${id.slice(0, 8).toUpperCase()}`;
+
+  // Profil-ID: Aus Notion oder generieren
+  const profileId = kandidat.kandidatenId || `TC-${new Date().getFullYear()}-${id.slice(0, 8).toUpperCase()}`;
+
+  // Executive Summary: Aus Notion oder generieren
+  const executiveSummary = kandidat.executiveSummary ||
+    `Erfahrene Fachkraft im Bereich ${kandidat.position || "Engineering"} mit fundierter Expertise in ${kandidat.branche.slice(0, 3).join(", ") || "technischen Industrien"}. Verfügbar für neue Herausforderungen ${kandidat.verfuegbarkeit ? `ab ${kandidat.verfuegbarkeit}` : "nach Vereinbarung"}.`;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200">
+      {/* View Counter (unsichtbar) */}
+      <ViewCounter pageId={id} />
+
       <style>{`
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(20px); }
@@ -51,7 +99,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ id: st
         .fade-in-5 { animation-delay: 0.5s; }
         .fade-in-6 { animation-delay: 0.6s; }
         .fade-in-7 { animation-delay: 0.7s; }
-        
+
         @media print {
           @page { size: A4; margin: 2cm; }
           body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
@@ -61,7 +109,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ id: st
       `}</style>
 
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-12 py-8 sm:py-12 lg:py-20">
-        
+
         {/* Header */}
         <header className="pb-6 sm:pb-8 border-b border-slate-800 fade-in fade-in-1">
           <div className="flex items-center gap-3 sm:gap-4 mb-4">
@@ -114,10 +162,9 @@ export default async function ProfilePage({ params }: { params: Promise<{ id: st
         <section className="py-8 sm:py-12 border-b border-slate-800 fade-in fade-in-4">
           <h2 className="text-xs tracking-[0.2em] text-teal-500 uppercase mb-4 sm:mb-6">Executive Summary</h2>
           <p className="text-base sm:text-lg lg:text-xl font-light text-slate-300 leading-relaxed">
-            Erfahrene Fachkraft im Bereich {kandidat.position || "Engineering"} mit fundierter Expertise in {kandidat.branche.slice(0, 3).join(", ") || "technischen Industrien"}. 
-            Verfügbar für neue Herausforderungen {kandidat.verfuegbarkeit ? `ab ${kandidat.verfuegbarkeit}` : "nach Vereinbarung"}.
+            {executiveSummary}
           </p>
-          
+
           {kandidat.techStack.length > 0 && (
             <div className="mt-6 sm:mt-8 pt-6 sm:pt-8 border-t border-slate-800/50">
               <h3 className="text-xs tracking-[0.2em] text-slate-600 uppercase mb-3 sm:mb-4">Kernqualifikationen</h3>
@@ -160,12 +207,12 @@ export default async function ProfilePage({ params }: { params: Promise<{ id: st
             <div className="text-xs text-slate-500 space-y-2 sm:space-y-3">
               <p className="text-slate-400 font-medium">Vertraulichkeitshinweis</p>
               <p>
-                Dieses Dokument enthält vertrauliche Informationen und ist ausschließlich für den 
-                vorgesehenen Empfänger bestimmt. Jegliche Weitergabe, Vervielfältigung oder 
+                Dieses Dokument enthält vertrauliche Informationen und ist ausschließlich für den
+                vorgesehenen Empfänger bestimmt. Jegliche Weitergabe, Vervielfältigung oder
                 Veröffentlichung bedarf der schriftlichen Genehmigung der TEKOM GmbH.
               </p>
               <p className="hidden sm:block">
-                Bei versehentlichem Erhalt bitten wir um umgehende Benachrichtigung und Löschung 
+                Bei versehentlichem Erhalt bitten wir um umgehende Benachrichtigung und Löschung
                 des Dokuments. Datenschutz gemäß DSGVO.
               </p>
             </div>
