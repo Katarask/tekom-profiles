@@ -22,6 +22,8 @@ interface KandidatProfile {
   profilViews?: number;
   kandidatenId?: string;
   executiveSummary?: string;
+  aktuelleSituation?: string;
+  ehemaligeArbeitgeber?: string;
 }
 
 // Notion Page zu Kandidat-Daten
@@ -54,7 +56,9 @@ function parseNotionPage(page: any): KandidatProfile | null {
     profilErstelltAm: getDate(props["Profil erstellt am"]),
     profilViews: getNumber(props["Profil Views"]),
     kandidatenId: getText(props["Kandidaten-ID"]),
-    executiveSummary: getText(props["Executive Summary"])
+    executiveSummary: getText(props["Executive Summary"]),
+    aktuelleSituation: getText(props["Aktuelle Situation"]),
+    ehemaligeArbeitgeber: getText(props["Ehemalige Arbeitgeber"])
   };
 }
 

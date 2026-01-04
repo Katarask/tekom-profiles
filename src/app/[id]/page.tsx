@@ -1,7 +1,8 @@
-import { MapPin, Mail, Phone, Shield, AlertTriangle } from "lucide-react";
+import { MapPin, Mail, Phone, Shield, AlertTriangle, Briefcase, Building2 } from "lucide-react";
 import { getKandidatByPageId, getPageContent, isProfileExpired } from "@/lib/notion";
 import { notFound } from "next/navigation";
 import ViewCounter from "@/components/ViewCounter";
+import Image from "next/image";
 
 // TEKOM Daten
 const tekom = {
@@ -10,7 +11,8 @@ const tekom = {
   email: "d.l.tulay@tekom-gmbh.de",
   phone: "089 290 33815",
   address: "Westenriederstraße 49, 80331 München",
-  website: "www.tekom-gmbh.de"
+  website: "www.tekom-gmbh.de",
+  logo: "https://cdn.prod.website-files.com/6878237b7ce1560f5b00ccc6/687c1d23724b8fbdbeeb0987_TEKOM.svg"
 };
 
 // Erfahrungsjahre schätzen
@@ -19,6 +21,50 @@ function estimateYears(branche: string[]): string {
   if (branche.length >= 3) return "10+";
   if (branche.length >= 2) return "5+";
   return "3+";
+}
+
+// Werdegang aus "Aktuelle Situation" parsen und anonymisieren
+function parseWerdegang(aktuelleSituation?: string): { rolle: string; branche: string; zeitraum: string }[] {
+  if (!aktuelleSituation) return [];
+
+  const stationen: { rolle: string; branche: string; zeitraum: string }[] = [];
+
+  // Mapping von Firmennamen zu anonymisierten Branchen
+  const firmenZuBranche: Record<string, string> = {
+    "lilium": "Luftfahrt / eVTOL",
+    "europrop": "Aerospace / Triebwerke",
+    "airbus": "Aerospace / Luftfahrt",
+    "tdk": "Elektronik / Komponenten",
+    "kraussmaffei": "Maschinenbau / Kunststofftechnik",
+    "surteco": "Fertigungsindustrie",
+    "hensoldt": "Defense / Sensorik",
+    "esg": "Defense / IT",
+    "diehl": "Defense / Aerospace",
+    "mtu": "Aerospace / Triebwerke",
+    "bmw": "Automotive / OEM",
+    "man": "Automotive / Nutzfahrzeuge",
+    "bosch": "Automotive / Zulieferer",
+    "siemens": "Industrie / Technologie"
+  };
+
+  // Einfaches Parsing: Suche nach Firmennamen und erstelle anonymisierte Stationen
+  const text = aktuelleSituation.toLowerCase();
+
+  for (const [firma, branche] of Object.entries(firmenZuBranche)) {
+    if (text.includes(firma)) {
+      // Versuche Rolle zu extrahieren (vor "bei" oder nach Firma)
+      const rolleMatch = aktuelleSituation.match(new RegExp(`als\\s+([^.,(]+)`, 'i'));
+      const rolle = rolleMatch ? rolleMatch[1].trim() : "Fachexperte";
+
+      stationen.push({
+        rolle: rolle.length > 50 ? rolle.substring(0, 50) + "..." : rolle,
+        branche,
+        zeitraum: "" // Zeitraum müsste strukturiert in Notion sein
+      });
+    }
+  }
+
+  return stationen.slice(0, 5); // Max 5 Stationen
 }
 
 // Expired Profile Page
@@ -59,7 +105,6 @@ function ExpiredProfile() {
 export default async function ProfilePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
-  // Notion Page ID kann mit oder ohne Bindestriche sein
   const kandidat = await getKandidatByPageId(id);
 
   if (!kandidat) {
@@ -80,6 +125,9 @@ export default async function ProfilePage({ params }: { params: Promise<{ id: st
   // Executive Summary: Aus Notion oder generieren
   const executiveSummary = kandidat.executiveSummary ||
     `Erfahrene Fachkraft im Bereich ${kandidat.position || "Engineering"} mit fundierter Expertise in ${kandidat.branche.slice(0, 3).join(", ") || "technischen Industrien"}. Verfügbar für neue Herausforderungen ${kandidat.verfuegbarkeit ? `ab ${kandidat.verfuegbarkeit}` : "nach Vereinbarung"}.`;
+
+  // Werdegang parsen
+  const werdegang = parseWerdegang(kandidat.aktuelleSituation);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200">
@@ -110,16 +158,15 @@ export default async function ProfilePage({ params }: { params: Promise<{ id: st
 
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-12 py-8 sm:py-12 lg:py-20">
 
-        {/* Header */}
+        {/* Header mit Logo */}
         <header className="pb-6 sm:pb-8 border-b border-slate-800 fade-in fade-in-1">
-          <div className="flex items-center gap-3 sm:gap-4 mb-4">
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-teal-500 flex items-center justify-center flex-shrink-0">
-              <span className="text-slate-950 font-bold text-base sm:text-lg">T</span>
-            </div>
-            <div>
-              <p className="text-sm sm:text-base font-medium text-slate-200">TEKOM Industrielle Systemtechnik GmbH</p>
-              <p className="text-xs sm:text-sm text-teal-500 font-medium tracking-wide">Headhunting</p>
-            </div>
+          <div className="flex items-center gap-4 mb-4">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={tekom.logo}
+              alt="TEKOM"
+              className="h-10 sm:h-12 w-auto"
+            />
           </div>
           <p className="text-xs sm:text-sm text-slate-500">
             Vermittlung innovativer Köpfe in Defense · IT · Robotik · Aviation · Aerospace
@@ -146,7 +193,9 @@ export default async function ProfilePage({ params }: { params: Promise<{ id: st
         <section className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-0 py-6 sm:py-8 border-b border-slate-800 fade-in fade-in-3">
           <div className="flex justify-between sm:block">
             <p className="text-xs tracking-wider text-slate-600 uppercase mb-1 sm:mb-2">Gehaltsrahmen</p>
-            <p className="text-lg sm:text-xl lg:text-2xl font-light text-slate-200">{kandidat.gehalt || "Auf Anfrage"}</p>
+            <p className="text-lg sm:text-xl lg:text-2xl font-light text-slate-200">
+              {kandidat.gehalt ? `${parseInt(kandidat.gehalt).toLocaleString('de-DE')} EUR` : "Auf Anfrage"}
+            </p>
           </div>
           <div className="flex justify-between sm:block sm:text-center">
             <p className="text-xs tracking-wider text-slate-600 uppercase mb-1 sm:mb-2">Verfügbarkeit</p>
@@ -175,25 +224,50 @@ export default async function ProfilePage({ params }: { params: Promise<{ id: st
           )}
         </section>
 
-        {/* Branchenerfahrung */}
-        {kandidat.branche.length > 0 && (
+        {/* Beruflicher Werdegang */}
+        {werdegang.length > 0 && (
           <section className="py-8 sm:py-12 border-b border-slate-800 fade-in fade-in-5">
-            <h2 className="text-xs tracking-[0.2em] text-teal-500 uppercase mb-6 sm:mb-8">Branchenerfahrung</h2>
-            <div className="space-y-3 sm:space-y-4">
-              {kandidat.branche.map((branche, i) => (
+            <h2 className="text-xs tracking-[0.2em] text-teal-500 uppercase mb-6 sm:mb-8">Beruflicher Werdegang</h2>
+            <div className="space-y-6">
+              {werdegang.map((station, i) => (
                 <div key={i} className="flex gap-4 sm:gap-6">
-                  <span className="text-teal-500/50 font-light text-base sm:text-lg">{String(i + 1).padStart(2, '0')}</span>
-                  <p className="text-slate-300 text-base sm:text-lg font-light">{branche}</p>
+                  <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-slate-800/50 flex items-center justify-center">
+                    <Building2 className="w-5 h-5 text-teal-500/70" />
+                  </div>
+                  <div>
+                    <p className="text-slate-200 font-medium">{station.rolle}</p>
+                    <p className="text-sm text-slate-500">{station.branche}</p>
+                    {station.zeitraum && (
+                      <p className="text-xs text-slate-600 mt-1">{station.zeitraum}</p>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
           </section>
         )}
 
-        {/* Content from Notion */}
+        {/* Branchenerfahrung */}
+        {kandidat.branche.length > 0 && (
+          <section className="py-8 sm:py-12 border-b border-slate-800 fade-in fade-in-5">
+            <h2 className="text-xs tracking-[0.2em] text-teal-500 uppercase mb-6 sm:mb-8">Branchenerfahrung</h2>
+            <div className="flex flex-wrap gap-2">
+              {kandidat.branche.map((branche, i) => (
+                <span
+                  key={i}
+                  className="px-3 py-1.5 bg-slate-800/50 text-slate-300 text-sm rounded-full border border-slate-700/50"
+                >
+                  {branche}
+                </span>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Content from Notion (Details) */}
         {content && (
           <section className="py-8 sm:py-12 border-b border-slate-800 fade-in fade-in-6">
-            <h2 className="text-xs tracking-[0.2em] text-teal-500 uppercase mb-6 sm:mb-8">Details</h2>
+            <h2 className="text-xs tracking-[0.2em] text-teal-500 uppercase mb-6 sm:mb-8">Weitere Details</h2>
             <div className="prose prose-invert prose-slate max-w-none">
               <div className="text-slate-300 whitespace-pre-line">{content}</div>
             </div>
